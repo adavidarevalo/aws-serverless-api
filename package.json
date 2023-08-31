@@ -24,6 +24,7 @@
   "dependencies": {
     "aws-cdk-lib": "2.89.0",
     "aws-sdk": "^2.1446.0",
+    "aws-xray-sdk": "^3.5.1",
     "constructs": "^10.0.0",
     "save-dev": "^0.0.1-security",
     "source-map-support": "^0.5.21"
