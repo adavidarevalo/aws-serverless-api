@@ -95,4 +95,18 @@ export class ProductRepository {
 
     return data.Attributes as Product;
   };
+
+  getProductsByIds = async (ids: string[]): Promise<Product[]> => {
+    const data = await this.ddbClient
+      .batchGet({
+        RequestItems: {
+          [this.productDdb]: {
+            Keys: ids.map(id => ({ id })),
+          },
+        },
+      })
+      .promise();
+
+    return data.Responses![this.productDdb] as Product[];
+  };
 }

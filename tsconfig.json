@@ -26,7 +26,9 @@
     "baseUrl": "./",
     "paths": {
       "/opt/nodejs/productsLayer": ["lambda/products/layers/productsLayer/nodejs/productsRepository.ts"],
-      "/opt/nodejs/productEventsLayer": ["lambda/products/layers/productEventsLayer/nodejs/productEvent.ts"]
+      "/opt/nodejs/productEventsLayer": ["lambda/products/layers/productEventsLayer/nodejs/productEvent.ts"],
+      "/opt/nodejs/ordersLayer": ["lambda/orders/layers/ordersLayer/nodejs/orderRepository.ts"],
+      "/opt/nodejs/ordersApiLayer": ["lambda/orders/layers/ordersApiLayer/nodejs/orderApi.ts"]
     }
   },
   "exclude": [
