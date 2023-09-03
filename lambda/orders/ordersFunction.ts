@@ -1,6 +1,6 @@
 /** @format */
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
-import { DynamoDB, Lambda } from 'aws-sdk';
+import { DynamoDB, SNS } from 'aws-sdk';
 import { Product, ProductRepository } from '/opt/nodejs/productsLayer';
 import { Order, OrderRepository } from '/opt/nodejs/ordersLayer';
 import * as AWSXRay from 'aws-xray-sdk';
@@ -12,11 +12,15 @@ import {
   PaymentType,
   ShippingType,
 } from '/opt/nodejs/ordersApiLayer';
+import { Envelope, OrderEvent, OrderEventType } from '/opt/nodejs/ordersEventsLayer';
 
 AWSXRay.captureAWS(require('aws-sdk'));
 
 const productsDdb = process.env.PRODUCTS_DDB!;
 const ordersDdb = process.env.ORDERS_DDB!;
+const orderEventsTopic = process.env.ORDER_EVENT_TOPIC_ARN!;
+
+const snsClient = new SNS();
 
 const ddbClient = new DynamoDB.DocumentClient();
 
@@ -77,6 +81,9 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context): Pr
     const order = buildOrder(orderRequest, products);
     const orderCreated = await orderRepository.createOrder(order);
 
+    const evesResult = await sendOrderEvents(orderCreated, OrderEventType.CREATED, lambdaRequestId);
+    console.log(`Order created - OrderId: ${orderCreated.sk} - MessageId: ${evesResult.MessageId}`);
+
     return {
       statusCode: 201,
       body: JSON.stringify(covertToOrderResponse(orderCreated)),
@@ -88,7 +95,8 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context): Pr
       const { email, orderId } = event.queryStringParameters!;
 
       const order = await orderRepository.deleteOrder(email as string, orderId as string);
-
+      const evesResult = await sendOrderEvents(order, OrderEventType.DELETED, lambdaRequestId);
+      console.log(`Order deleted - OrderId: ${order.sk} - MessageId: ${evesResult.MessageId}`);
       return {
         statusCode: 200,
         body: JSON.stringify(covertToOrderResponse(order)),
@@ -108,6 +116,41 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context): Pr
       message: 'Not found',
     }),
   };
+};
+
+const sendOrderEvents = (order: Order, eventType: OrderEventType, lambdaRequestId: string) => {
+  const productCodes: string[] = [];
+
+  order.products.forEach(product => {
+    productCodes.push(product.code);
+  });
+
+  const orderEvent: OrderEvent = {
+    productCodes,
+    email: order.pk,
+    orderId: order.sk as string,
+    billing: {
+      payment: order.billing.payment,
+      totalPrice: order.billing.totalPrice,
+    },
+    shipping: {
+      type: order.shipping.type,
+      carrier: order.shipping.carrier,
+    },
+    requestId: lambdaRequestId,
+  };
+
+  const envelope: Envelope = {
+    eventType,
+    data: JSON.stringify(orderEvent),
+  };
+
+  return snsClient
+    .publish({
+      TopicArn: orderEventsTopic,
+      Message: JSON.stringify({ ...envelope }),
+    })
+    .promise();
 };
 
 const covertToOrderResponse = (order: Order): OrderResponse => {

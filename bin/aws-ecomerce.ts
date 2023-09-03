@@ -40,10 +40,12 @@ const ordersAppStack = new OrdersAppStack(app, 'OrdersAppStack', {
   env,
   tags,
   productsDdb: productsAppStack.productsDdb,
+  eventsDdb: eventsDdb.table,
 });
 
 ordersAppStack.addDependency(productsAppLayersStack);
 ordersAppStack.addDependency(ordersAppLayersStack);
+ordersAppStack.addDependency(eventsDdb);
 
 const eCommerceApiStack = new ECommerceApiStack(app, 'ECommerceApiStack', {
   env,
