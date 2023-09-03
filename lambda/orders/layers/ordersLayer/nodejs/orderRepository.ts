@@ -1,6 +1,5 @@
 /** @format */
 import { DocumentClient } from 'aws-sdk/clients/dynamodb';
-import { v4 as uuid } from 'uuid';
 
 export interface OrderProduct {
   code: string;
@@ -9,12 +8,12 @@ export interface OrderProduct {
 
 export interface Order {
   pk: string;
-  sk?: string;
+  sk: string;
   shipping: {
     type: 'URGENT' | 'ECONOMIC';
     carrier: 'CORREOS' | 'FEDEX';
   };
-  createAt?: number;
+  createAt: number;
   products: OrderProduct[];
   billing: {
     totalPrice: number;
@@ -31,8 +30,6 @@ export class OrderRepository {
   }
 
   async createOrder(order: Order): Promise<Order> {
-    order.sk = uuid();
-    order.createAt = Date.now();
     await this.ddbClient
       .put({
         TableName: this.ordersDdb,

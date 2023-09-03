@@ -13,6 +13,7 @@ import {
   ShippingType,
 } from '/opt/nodejs/ordersApiLayer';
 import { Envelope, OrderEvent, OrderEventType } from '/opt/nodejs/ordersEventsLayer';
+import { v4 as uuid } from 'uuid';
 
 AWSXRay.captureAWS(require('aws-sdk'));
 
@@ -79,14 +80,18 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context): Pr
     }
 
     const order = buildOrder(orderRequest, products);
-    const orderCreated = await orderRepository.createOrder(order);
 
-    const evesResult = await sendOrderEvents(orderCreated, OrderEventType.CREATED, lambdaRequestId);
-    console.log(`Order created - OrderId: ${orderCreated.sk} - MessageId: ${evesResult.MessageId}`);
+    const orderCreatedPromise = orderRepository.createOrder(order);
+
+    const evesResultPromise = sendOrderEvents(order, OrderEventType.CREATED, lambdaRequestId);
+
+    const result = await Promise.all([orderCreatedPromise, evesResultPromise]);
+
+    console.log(`Order created - OrderId: ${order.sk} - MessageId: ${result[1].MessageId}`);
 
     return {
       statusCode: 201,
-      body: JSON.stringify(covertToOrderResponse(orderCreated)),
+      body: JSON.stringify(covertToOrderResponse(order)),
     };
   }
 
@@ -149,6 +154,12 @@ const sendOrderEvents = (order: Order, eventType: OrderEventType, lambdaRequestI
     .publish({
       TopicArn: orderEventsTopic,
       Message: JSON.stringify({ ...envelope }),
+      MessageAttributes: {
+        eventType: {
+          DataType: 'String',
+          StringValue: eventType,
+        },
+      },
     })
     .promise();
 };
@@ -193,6 +204,8 @@ const buildOrder = (orderRequest: OrderRequest, products: Product[]): Order => {
   });
   const order: Order = {
     pk: orderRequest.email,
+    sk: uuid(),
+    createAt: Date.now(),
     billing: {
       payment: orderRequest.payment,
       totalPrice,
