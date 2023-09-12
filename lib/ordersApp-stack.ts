@@ -9,6 +9,8 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 
 interface OrdersAppLayersStackProps extends cdk.StackProps {
   productsDdb: dynamodb.Table;
@@ -17,6 +19,7 @@ interface OrdersAppLayersStackProps extends cdk.StackProps {
 
 export class OrdersAppStack extends cdk.Stack {
   readonly ordersHandler: lambdaNodejs.NodejsFunction;
+  readonly orderEventsFetchHandler: lambdaNodejs.NodejsFunction;
 
   constructor(scope: Construct, id: string, props: OrdersAppLayersStackProps) {
     super(scope, id, props);
@@ -120,7 +123,7 @@ export class OrdersAppStack extends cdk.Stack {
       resources: [props.eventsDdb.tableArn],
       conditions: {
         ['ForAllValues:StringLike']: {
-          'dynamodb:LeadingKey': ['#order_*'],
+          'dynamodb:LeadingKeys': ['#order_*'],
         },
       },
     });
@@ -151,5 +154,107 @@ export class OrdersAppStack extends cdk.Stack {
         },
       })
     );
+
+    const orderEventsDlq = new sqs.Queue(this, 'orderEventsDlq', {
+      queueName: 'order-events-dlq',
+      retentionPeriod: cdk.Duration.days(10),
+      enforceSSL: false,
+      encryption: sqs.QueueEncryption.UNENCRYPTED,
+    });
+
+    const orderEventsQueue = new sqs.Queue(this, 'OrderEventsQueue', {
+      queueName: 'order-events',
+      enforceSSL: false,
+      encryption: sqs.QueueEncryption.UNENCRYPTED,
+      deadLetterQueue: {
+        maxReceiveCount: 3,
+        queue: orderEventsDlq,
+      },
+    });
+    ordersTopic.addSubscription(
+      new subs.SqsSubscription(orderEventsQueue, {
+        filterPolicy: {
+          eventType: sns.SubscriptionFilter.stringFilter({
+            allowlist: ['ORDER_CREATED'],
+          }),
+        },
+      })
+    );
+
+    const orderEmailsHandler = new lambdaNodejs.NodejsFunction(this, 'OrderEmailsFunction', {
+      entry: './lambda/orders/orderEmailsFunction.ts',
+      functionName: 'OrderEmailsFunction',
+      runtime: lambda.Runtime.NODEJS_16_X,
+      handler: 'handler',
+      memorySize: 128,
+      timeout: cdk.Duration.seconds(2),
+      bundling: {
+        minify: true,
+        sourceMap: false,
+      },
+      layers: [ordersEventsLayer],
+      tracing: lambda.Tracing.ACTIVE,
+      insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0,
+    });
+
+    orderEmailsHandler.addEventSource(
+      new lambdaEventSources.SqsEventSource(orderEventsQueue, {
+        batchSize: 5,
+        enabled: true,
+        maxBatchingWindow: cdk.Duration.minutes(1),
+      })
+    );
+
+    orderEventsQueue.grantConsumeMessages(orderEmailsHandler);
+
+    const readScale = ordersDdb.autoScaleReadCapacity({
+      maxCapacity: 2,
+      minCapacity: 1,
+    });
+
+    readScale.scaleOnUtilization({
+      targetUtilizationPercent: 75,
+      scaleInCooldown: cdk.Duration.minutes(1),
+      scaleOutCooldown: cdk.Duration.minutes(1),
+    });
+    ordersDdb.autoScaleWriteCapacity({
+      maxCapacity: 4,
+      minCapacity: 1,
+    });
+
+    const orderEmailSesPolicy = new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'],
+    });
+
+    orderEmailsHandler.addToRolePolicy(orderEmailSesPolicy);
+
+    this.orderEventsFetchHandler = new lambdaNodejs.NodejsFunction(this, 'OrderEventsFetchFunction', {
+      entry: './lambda/orders/orderEventsFetchFunction.ts',
+      functionName: 'OrderEventsFetchFunction',
+      runtime: lambda.Runtime.NODEJS_16_X,
+      handler: 'handler',
+      memorySize: 128,
+      timeout: cdk.Duration.seconds(2),
+      bundling: {
+        minify: true,
+        sourceMap: false,
+      },
+      environment: {
+        EVENT_DDB: props.eventsDdb.tableName,
+      },
+      layers: [ordersEventsRepositoryLayer],
+      tracing: lambda.Tracing.ACTIVE,
+      insightsVersion: lambda.LambdaInsightsVersion.VERSION_1_0_119_0,
+    });
+
+    const eventsFetchDdbPolicy = new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['dynamodb:Query'],
+      resources: [`${props.eventsDdb.tableArn}/index/emailIndex`],
+    });
+
+    this.orderEventsFetchHandler.addToRolePolicy(eventsFetchDdbPolicy);
   }
 }

@@ -14,7 +14,7 @@ export interface Order {
     carrier: 'CORREOS' | 'FEDEX';
   };
   createAt: number;
-  products: OrderProduct[];
+  products?: OrderProduct[];
   billing: {
     totalPrice: number;
     payment: 'CASH' | 'DEBIT_CARD' | 'CREDIT_CARD';
@@ -44,6 +44,7 @@ export class OrderRepository {
     const result = await this.ddbClient
       .scan({
         TableName: this.ordersDdb,
+        ProjectionExpression: 'pk, sk,createdAt,shipping,billing',
       })
       .promise();
 
@@ -58,6 +59,7 @@ export class OrderRepository {
         ExpressionAttributeValues: {
           ':email': email,
         },
+        ProjectionExpression: 'pk, sk,createdAt,shipping,billing',
       })
       .promise();
 
@@ -72,6 +74,7 @@ export class OrderRepository {
           pk: email,
           sk: orderId,
         },
+        ProjectionExpression: 'pk, sk,createdAt,shipping,billing',
       })
       .promise();
 

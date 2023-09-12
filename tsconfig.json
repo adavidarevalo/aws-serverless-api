@@ -30,7 +30,12 @@
       "/opt/nodejs/ordersLayer": ["lambda/orders/layers/ordersLayer/nodejs/orderRepository.ts"],
       "/opt/nodejs/ordersApiLayer": ["lambda/orders/layers/ordersApiLayer/nodejs/orderApi.ts"],
       "/opt/nodejs/ordersEventsLayer": ["lambda/orders/layers/orderEventsLayer/nodejs/orderEvent.ts"],
-      "/opt/nodejs/orderEventsRepositoryLayer": ["lambda/orders/layers/orderEventsRepositoryLayer/nodejs/orderEventsRepositoryLayer.ts"]
+      "/opt/nodejs/orderEventsRepositoryLayer": [
+        "lambda/orders/layers/orderEventsRepositoryLayer/nodejs/orderEventsRepositoryLayer.ts"
+      ],
+      "/opt/nodejs/invoiceTransaction": ["lambda/invoices/layers/invoiceTransaction/nodejs/invoiceTransaction.ts"],
+      "/opt/nodejs/invoiceWSConnection": ["lambda/invoices/layers/invoiceWSConnection/nodejs/invoiceWSConnection.ts"],
+      "/opt/nodejs/invoiceRepository": ["lambda/invoices/layers/invoiceRepository/nodejs/invoiceRepository.ts"]
     }
   },
   "exclude": [
