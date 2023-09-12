@@ -13,9 +13,11 @@ import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import { Construct } from 'constructs';
+import * as events from 'aws-cdk-lib/aws-events';
 
 interface InvoiceWSApiStackProps extends cdk.StackProps {
   eventDdb: dynamodb.Table;
+  auditBus: events.EventBus;
 }
 
 export class InvoiceWSApiStack extends cdk.Stack {
@@ -179,10 +181,12 @@ export class InvoiceWSApiStack extends cdk.Stack {
       environment: {
         INVOICE_DDB: invoicesDdb.tableName,
         INVOICE_WSAPI_ENDPOINT: wsApiEndpoint,
+        AUDIT_BUS_NAME: props.auditBus.eventBusName,
       },
       layers: [invoiceTransactionLayer, invoiceWsConnectionLayer, invoiceLayer],
       tracing: lambda.Tracing.ACTIVE,
     });
+    props.auditBus.grantPutEventsTo(invoiceImportHandler);
 
     invoicesDdb.grantReadWriteData(invoiceImportHandler);
 
@@ -251,9 +255,11 @@ export class InvoiceWSApiStack extends cdk.Stack {
       environment: {
         EVENT_DDB: props.eventDdb.tableName,
         INVOICE_WSAPI_ENDPOINT: wsApiEndpoint,
+        AUDIT_BUS_NAME: props.auditBus.eventBusName,
       },
       layers: [invoiceWsConnectionLayer],
     });
+    props.auditBus.grantPutEventsTo(invoiceEventsHandler);
 
     webSocketApi.grantManageConnections(invoiceEventsHandler);
 

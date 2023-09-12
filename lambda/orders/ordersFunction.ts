@@ -1,6 +1,6 @@
 /** @format */
 import { APIGatewayProxyEvent, APIGatewayProxyResult, Context } from 'aws-lambda';
-import { DynamoDB, SNS } from 'aws-sdk';
+import { DynamoDB, EventBridge, SNS } from 'aws-sdk';
 import { Product, ProductRepository } from '/opt/nodejs/productsLayer';
 import { Order, OrderRepository } from '/opt/nodejs/ordersLayer';
 import * as AWSXRay from 'aws-xray-sdk';
@@ -20,6 +20,7 @@ AWSXRay.captureAWS(require('aws-sdk'));
 const productsDdb = process.env.PRODUCTS_DDB!;
 const ordersDdb = process.env.ORDERS_DDB!;
 const orderEventsTopic = process.env.ORDER_EVENT_TOPIC_ARN!;
+const auditBusEvent = process.env.AUDIT_BUS_NAME!;
 
 const snsClient = new SNS();
 
@@ -27,6 +28,7 @@ const ddbClient = new DynamoDB.DocumentClient();
 
 const orderRepository = new OrderRepository(ddbClient, ordersDdb);
 const productRepository = new ProductRepository(ddbClient, productsDdb);
+const eventBridgeClient = new EventBridge();
 
 export const handler = async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> => {
   const method = event.httpMethod;
@@ -73,6 +75,25 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context): Pr
     const orderRequest = JSON.parse(event.body!) as OrderRequest;
     const products = await productRepository.getProductsByIds(orderRequest.productIds);
     if (products.length !== orderRequest.productIds.length) {
+      const result = await eventBridgeClient
+        .putEvents({
+          Entries: [
+            {
+              Source: 'app.order',
+              EventBusName: auditBusEvent,
+              DetailType: 'order',
+              Time: new Date(),
+              Detail: JSON.stringify({
+                reason: 'PRODUCT_NOT_FOUND',
+                orderRequest,
+              }),
+            },
+          ],
+        })
+        .promise();
+
+      console.log(result);
+
       return {
         statusCode: 400,
         body: 'Some products are not found',
